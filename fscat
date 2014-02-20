@@ -1,0 +1,370 @@
+#!/usr/bin/python
+
+import os,sys,re
+from glob import glob
+from shutil import rmtree
+from xml.dom import minidom
+import logging
+
+__author__  = "Dario Chiappetta"
+__email__   = "dario@repni.it"
+__version__ = "0.1"
+__status__  = "development"
+
+DIR_DATA    = "_data/"
+DIR_IDX     = "./"
+DIR_IDX_AZ  = DIR_IDX+"by_title/"
+DIR_IDX_GEN = DIR_IDX+"by_genre/"
+METAFILE    = ".meta"
+
+KW_STOP = "S"
+KW_SKIP = "K"
+
+#
+# COMMANDS
+#
+
+def build_indices(dataroot = DIR_DATA):
+	"""
+	Crawls the subfolders of the current working directory (not recursively)
+	searching for metafiles. When a metafile is found, the corresponding film
+	is added to the index.
+	"""
+	
+	logging.debug("Indices build started")
+	
+	"""Remove existing indices, if present"""
+	if os.path.exists(DIR_IDX_AZ):
+		print("Old alphabetic index found: must be removed to continue.")
+		if not yn_remove_folder(DIR_IDX_AZ):
+			return False
+	if os.path.exists(DIR_IDX_GEN):
+		print("Old genres index found: must be removed to continue.")
+		if not yn_remove_folder(DIR_IDX_GEN):
+			return False
+	
+	"""Build the updated index"""
+	for d in [x[0] for x in os.walk(dataroot)][1:]:
+		movies = get_movie_from_XML(d+"/"+METAFILE)
+		if movies:
+			for m in movies:
+				add_to_index_az(d+"/",m)
+				add_to_index_gen(d+"/",m)
+			
+	return True
+
+def edit_meta(movieroot = "./"):
+	"""
+	Edit the metadata for the movie in the specified directory. Create metadata
+	file if not already present.
+	"""
+	
+	logging.debug("Editing metadata for movie in the current folder")
+
+	"""Enforce trailing slash in path"""
+	movieroot = os.path.abspath(movieroot)+"/"
+
+	"""If metadata already present, resue information"""
+	m = get_movie_from_XML(movieroot+METAFILE)
+	if m:
+		p_title = m.title
+		p_year  = m.year
+		p_genre = m.genre
+		p_files = m.files
+	else:
+		p_title, p_year, p_genre, p_files = guess_meta(movieroot)
+
+	n_title = input("title: ["+p_title+"] ")
+	if n_title == "":
+		n_title = p_title
+	
+	n_year  = input("year: ["+p_year+"] ")
+	if n_year == "":
+		n_year = p_year
+		
+	n_genre = input("genre: ["+p_genre+"] ")
+	if n_genre == "":
+		n_genre = p_genre
+	
+	filelist = []
+	stop = False
+	for f in p_files:
+		filename_in = input("file ("+KW_STOP+" to terminate, "+KW_SKIP+" to skip): ["+f+"] ")
+		
+		if filename_in == KW_STOP:
+			stop = True
+			break
+		
+		if filename_in is not KW_SKIP:
+			filelist.append(f)
+	
+	filename_in = None
+	while True:
+		if stop or filename_in == KW_STOP:
+			break
+		
+		if filename_in and filename_in is not "":
+			filelist.append(filename_in)
+		
+		filename_in = input("file ("+KW_STOP+" to terminate): ")
+	
+	n_movie = Movie(n_title, n_year, n_genre, filelist)
+		
+	print(n_movie.get_xml())
+	
+	stop = False
+	while stop == False:
+		write_yn = input("\nCorrect? [Y/n] ")
+		
+		if (write_yn == "") or (write_yn.lower() == "y"):
+			stop = True
+			metafile = open(movieroot+METAFILE,"w")
+			metafile.write(n_movie.get_xml())
+			metafile.close()
+			print("Metadata written to "+movieroot+METAFILE)
+		elif write_yn.lower() == "n":
+			stop = True
+			print("Metadata were not updated")
+		else:
+			print("Invalid input. Please answer with 'y' or 'n'.")
+		
+
+def init_meta(dataroot = DIR_DATA):
+	"""
+	Loops (not recursively) through the subdirectories of 'dataroot', creating
+	metadata for each folder (or editing them, if already present)
+	"""
+	
+	"""Check if data directory exists"""
+	if not os.path.exists(dataroot):
+		logging.error("Invalid data directory: "+os.path.abspath(dataroot))
+		return False
+	
+	"""Build the updated index"""
+	for d in [x[0] for x in os.walk(dataroot)][1:]:
+		
+		stop = False
+		while not stop:
+			edit_yn = input("Edit metadata for "+os.path.abspath(d)+"? [y/N] ")
+			
+			if (edit_yn.lower() == "y"):
+				stop = True
+				edit_meta(d)
+			elif (edit_yn.lower() == "") or (edit_yn.lower() == "n"):
+				stop = True
+				print("Skipping.")
+			else:
+				print("Invalid input. Please answer with 'y' or 'n'.")
+			
+		print()
+		
+	return True
+
+#
+# UTIL_EDIT
+# Utility methods for the 'edit' command
+#
+
+def guess_meta(movieroot):
+	"""
+	Guesses the metadata from file and folder names
+	"""
+	
+	"""files: all the possible video and subtitle files"""
+	# FIXME: glob looks in current directory, instead of movie root
+	files = glob(movieroot + "*.avi") + \
+	        glob(movieroot + "*.mkv") + \
+	        glob(movieroot + "*.mp4") + \
+	        glob(movieroot + "*.srt")
+	
+	files = [os.path.basename(x) for x in files]
+	
+	"""title: the folder name"""
+	title = movieroot.split("/")[-2]
+
+	"""year: most frequent year match in video files or folder name"""
+	year = ""
+	candidate_years = []
+	for i in files + [title]:
+		candidate_years = candidate_years + re.findall(r"[1-2][0-9]{3}", i)
+	if len(candidate_years) > 0:
+		year = max(set(candidate_years), key=candidate_years.count)
+	
+	"""genre: not guessed at the moment..."""
+	genre = ""
+	
+	return title, year, genre, files
+
+#
+# UTIL_BUILD
+# Utility methods for the 'build' command
+#
+
+def yn_remove_folder(path):
+	ans = input("Remove '"+path+"' and its content? [y/N] ")
+	if (ans.lower() == 'y'):
+		rmtree(path)
+		return True
+	elif (ans.lower() == 'n' or ans == ''):
+		return False
+	else:
+		print("Please answer with 'y' or 'n'.")
+		return yn_remove_folder(path)
+
+def add_to_index_az(src_path, movie):
+	"""
+	Add the given file to the alphabetical index
+	"""
+	
+	letter   = movie.title[0].upper()
+	idx_path = DIR_IDX_AZ+letter+"/"+movie.title+"/"
+	
+	add_to_index(src_path, idx_path, movie)
+	
+	logging.debug("Added '"+movie.title+"' to alphabetical index ("+idx_path+")")
+
+def add_to_index_gen(src_path, movie):
+	"""
+	Add the given file to the genres index
+	"""
+	
+	idx_path = DIR_IDX_GEN+movie.genre+"/"+movie.year+" - "+movie.title+"/"
+	
+	add_to_index(src_path, idx_path, movie)
+	
+	logging.debug("Added '"+movie.title+"' to genres index ("+idx_path+")")
+	
+def add_to_index(src_path, idx_path, movie):
+	"""Create the index directory, if not already existing"""
+	if not os.path.exists(idx_path):
+		os.makedirs(idx_path)
+		
+	"""Create a hardlink to the movie file(s)"""
+	for f in movie.files:
+		try:
+			os.link(src_path+f,idx_path+f)
+		except FileNotFoundError:
+			logging.warning("File not found: "+src_path+f+". Skipped. It is recommended to update movie entry.")
+
+#
+# FACTORY
+#
+
+def get_movie_from_XML(filename):
+	"""
+	Returns a list of Movie objects built upon the <movie> entries found in the
+	given .meta description file
+	"""
+	
+	if not os.path.isfile(filename):
+		return False
+	
+	try:
+		meta = minidom.parse(filename)
+	except:
+		logging.warning("Invalid content for metafile: "+filename)
+		return False
+	
+	r = []
+	
+	"""For every <media> element in the metafile"""
+	medias = meta.getElementsByTagName("media")
+	for media in medias:
+		"""Get the movie files (there can be 1 or more)"""
+		files = []
+		elements = media.getElementsByTagName("file")
+		for tag in elements:
+			assert tag.childNodes[0].nodeType == tag.childNodes[0].TEXT_NODE
+			files.append(tag.childNodes[0].data)
+		
+		"""Get the other properties"""
+		properties = {}
+		for p in Movie.PROPERTIES:
+			elements = media.getElementsByTagName(p)
+			
+			assert len(elements) == 1
+			tag = elements[0]
+			
+			try:
+				assert tag.childNodes[0].nodeType == tag.childNodes[0].TEXT_NODE
+				properties[p] = tag.childNodes[0].data
+			except IndexError:
+				logging.warning("Empty value for property '"+p+"' in metafile "+filename)
+				properties[p] = ""
+		
+		"""Builds and appends a Movie object representing the <media> entry"""
+		r.append(Movie(properties["title"],properties["year"],properties["genre"], files))
+	
+	return r
+
+#
+# CLASSES
+#
+
+class Movie(object):
+	
+	PROPERTIES = ["title", "year", "genre"]
+	
+	def __init__(self, title, year, genre, files):
+		self.title = title
+		self.year  = year
+		self.genre = genre
+		self.files = files
+		
+	def get_xml(self):
+		"""
+		Returns the movie in the fscat XML format.
+		
+		TODO: This should be replaced with a template engine
+		"""
+		
+		r = "<media type='movie'>\n"
+		
+		for f in self.files:
+			r += "	<file>"+f+"</file>\n"
+		
+		r += "	<title>"+self.title+"</title>\n"
+		r += "	<year>"+self.year+"</year>\n"
+		r += "	<genre>"+self.genre+"</genre>\n"
+		
+		return r+"</media>"
+
+#
+# MAIN
+#
+
+if __name__ == '__main__':
+	logging.basicConfig(level=logging.WARNING)
+	
+	try:
+		if (sys.argv[1] == "build"):
+			if build_indices():
+				print("Indices successfully built")
+			else:
+				print("Errors occurred. No index was built.")
+				
+		elif (sys.argv[1] == "edit"):
+			#~ try:
+			edit_meta(sys.argv[2])
+			#~ except IndexError:
+				#~ print("USAGE: fscat edit PATH")
+		
+		elif (sys.argv[1] == "init"):
+			try:
+				d = sys.argv[2]
+			except IndexError:
+				d = DIR_DATA
+			
+			if init_meta(d):
+				print("Medadata initialized correctly")
+			else:
+				print("Errors occurred. Metadata initialization not completed.")
+		
+		elif (sys.argv[1] == "help"):
+			print("Fscat "+__version__)
+			print("No help screen available... Check the code.")
+		
+		else:
+			print("Invalid parameter: "+sys.argv[1])
+	except IndexError:
+		print("USAGE: fscat COMMAND [OPTIONS]")
