@@ -15,16 +15,19 @@ DIR_DATA    = "_data/"
 DIR_IDX     = "./"
 DIR_IDX_AZ  = DIR_IDX+"by_title/"
 DIR_IDX_GEN = DIR_IDX+"by_genre/"
-METAFILE    = ".meta"
+CONFFILE    = ".fscat.conf"
+METAFILE    = ".meta"			# TODO: change in .fscat.meta
 
 KW_STOP = "S"
 KW_SKIP = "K"
+
+UNDEFINED_NAME = "_UNDEFINED_"
 
 #
 # COMMANDS
 #
 
-def build_indices(dataroot = DIR_DATA):
+def build_indices(root = "./"):
 	"""
 	Crawls the subfolders of the current working directory (not recursively)
 	searching for metafiles. When a metafile is found, the corresponding film
@@ -33,23 +36,31 @@ def build_indices(dataroot = DIR_DATA):
 	
 	logging.debug("Indices build started")
 	
-	"""Remove existing indices, if present"""
-	if os.path.exists(DIR_IDX_AZ):
-		print("Old alphabetic index found: must be removed to continue.")
-		if not yn_remove_folder(DIR_IDX_AZ):
-			return False
-	if os.path.exists(DIR_IDX_GEN):
-		print("Old genres index found: must be removed to continue.")
-		if not yn_remove_folder(DIR_IDX_GEN):
-			return False
+	root     = os.path.abspath(root)+"/"
+	dataroot = root+DIR_DATA
 	
-	"""Build the updated index"""
+	collection = get_collection_from_XML(root+CONFFILE)
+	if not collection:
+		logging.error("Errors occurred reading collection's configuration file. Aborting.")
+		return False
+
+	"""Remove existing indices, if present"""
+	for i in collection.indices:
+		if os.path.exists(i.root):
+			print("Old index found: must be removed to continue.")
+			if not yn_remove_folder(i.root):
+				return False	
+			
+	"""Build the updated indices"""
 	for d in [x[0] for x in os.walk(dataroot)][1:]:
-		movies = get_movie_from_XML(d+"/"+METAFILE)
+		d = d+"/"
+		movies = get_movies_from_XML(d+METAFILE)
 		if movies:
 			for m in movies:
-				add_to_index_az(d+"/",m)
-				add_to_index_gen(d+"/",m)
+				#~ add_to_index_az(d+"/",m)
+				#~ add_to_index_gen(d+"/",m)
+				for i in collection.indices:
+					add_to_index(d,m,i)
 			
 	return True
 
@@ -65,7 +76,9 @@ def edit_meta(movieroot = "./"):
 	movieroot = os.path.abspath(movieroot)+"/"
 
 	"""If metadata already present, resue information"""
-	m = get_movie_from_XML(movieroot+METAFILE)
+	# TODO: now get_movies_from_XML() returns a list, following code must be 
+	#       updated
+	m = get_movies_from_XML(movieroot+METAFILE)
 	if m:
 		p_title = m.title
 		p_year  = m.year
@@ -211,30 +224,22 @@ def yn_remove_folder(path):
 		print("Please answer with 'y' or 'n'.")
 		return yn_remove_folder(path)
 
-def add_to_index_az(src_path, movie):
-	"""
-	Add the given file to the alphabetical index
-	"""
+def add_to_index(src_path, movie, index):
 	
-	letter   = movie.title[0].upper()
-	idx_path = DIR_IDX_AZ+letter+"/"+movie.title+"/"
+	"""Extract features from movie"""
+	f = {}
+	f["TITLE"]   = movie.title
+	f["YEAR"]    = movie.year
+	f["GENRE"]   = movie.genre
+	f["INITIAL"] = movie.title[0].upper()
 	
-	add_to_index(src_path, idx_path, movie)
+	"""Build path by replacing features in the definition"""
+	idx_path = index.path
+	for k in f.keys():
+		idx_path = idx_path.replace("$"+k,f[k])
 	
-	logging.debug("Added '"+movie.title+"' to alphabetical index ("+idx_path+")")
-
-def add_to_index_gen(src_path, movie):
-	"""
-	Add the given file to the genres index
-	"""
+	idx_path = index.root+idx_path
 	
-	idx_path = DIR_IDX_GEN+movie.genre+"/"+movie.year+" - "+movie.title+"/"
-	
-	add_to_index(src_path, idx_path, movie)
-	
-	logging.debug("Added '"+movie.title+"' to genres index ("+idx_path+")")
-	
-def add_to_index(src_path, idx_path, movie):
 	"""Create the index directory, if not already existing"""
 	if not os.path.exists(idx_path):
 		os.makedirs(idx_path)
@@ -246,11 +251,13 @@ def add_to_index(src_path, idx_path, movie):
 		except FileNotFoundError:
 			logging.warning("File not found: "+src_path+f+". Skipped. It is recommended to update movie entry.")
 
+	logging.debug("Added '"+movie.title+"' to index '"+index.name+"' ("+idx_path+")")
+
 #
 # FACTORY
 #
 
-def get_movie_from_XML(filename):
+def get_movies_from_XML(filename):
 	"""
 	Returns a list of Movie objects built upon the <movie> entries found in the
 	given .meta description file
@@ -297,6 +304,132 @@ def get_movie_from_XML(filename):
 	
 	return r
 
+def get_collection_from_XML(filename):
+	"""
+	Returns a Collection object built from the collection's configuration file,
+	.fscat.conf
+	"""
+
+	if not os.path.isfile(filename):
+		logging.warning("Impossible to open '"+filename+"' for reading.")
+		return False
+	
+	try:
+		conf = minidom.parse(filename)
+	except:
+		logging.warning("Invalid content for configuration file: "+filename)
+		return False
+	
+	"""Get the main <collection> tag"""
+	collection = conf.getElementsByTagName("collection")
+	assert len(collection) == 1
+	collection = collection[0]
+	name_processed = False
+	
+	"""Process the content of the collection"""
+	name    = None
+	indices = []
+	for node in collection.childNodes:
+		if node.localName == "index":
+			i = _get_index_from_XML_element(node, filename)
+			if i:
+				indices.append(i)
+			
+		elif node.localName == "name":
+			if name_processed:
+				logging.warning("Duplicate 'name' entry in '"+filename+"'")
+			name = _get_XML_tag_value(node)
+			name_processed = True
+		
+		elif node.localName is not None:
+			logging.warning("Unknown tag '"+node.localName+"' in '"+filename+"'. Skipping.")
+
+	if not name:
+		logging.warning("Missing 'name' tag for collection in '"+filename+"'")
+		name = UNDEFINED_NAME
+	if len(indices) == 0:
+		logging.warning("No index defined in '"+filename+"'")
+		return False
+	
+	return Collection(name,indices)
+	
+
+def _get_index_from_XML_element(element, source = None):
+	"""
+	Builds and returns a CollectionIndex object from a <index> element (supposed
+	to be found in the collection's .fscat.conf), as it is parsed by minidom.
+	
+		'element'	Is the Dom Element containing the index
+		'source'	Is the path to the XML, used for error messages
+	"""
+	
+	name = None
+	root = None
+	path = None
+	
+	"""Extract information from XML"""
+	name_processed = False
+	root_processed = False
+	path_processed = False
+	for node in element.childNodes:
+		if node.localName == "name":
+			if name_processed:
+				logging.warning("Duplicate entry 'name' in '"+source+"'")
+			name = _get_XML_tag_value(node)
+			name_processed = True
+			
+		elif node.localName == "root":
+			if root_processed:
+				logging.warning("Duplicate entry 'root' in '"+source+"'")
+			root = _get_XML_tag_value(node)
+			root_processed = True
+			
+		elif node.localName == "path":
+			if path_processed:
+				logging.warning("Duplicate entry 'path' in '"+source+"'")
+			path = _get_XML_tag_value(node)
+			path_processed = True
+			
+		elif node.localName is not None:
+			logging.warning("Unknown tag '"+node.localName+"' in '"+source+"'. Skipping.")
+
+	
+	"""Check for missing parameters"""
+	if not name:
+		logging.warning("Missing 'name' for index in '"+source+"'.")
+		name = UNDEFINED_NAME
+	if not root:
+		logging.warning("Missing 'root' for index in '"+source+"'.")
+		return False
+	if not path:
+		logging.warning("Missing 'path' for index in '"+source+"'.")
+		return False
+	
+	"""Return the CollectionIndex object"""
+	return CollectionIndex(name, root, path)
+
+
+def _get_XML_tag_value(node, source = None):
+	"""
+	Returns the string contained in the given DOM Node, or an error if the node
+	does not contain a string (e.g. other nodes).
+	
+		'node'		is the DOM Node
+		'source'	Is an identifier of the source (e.g. the XML file), will be
+					displayed in case of error
+	"""
+
+	if source is not None:
+		source_msg = " in '"+source+"'"
+	else:
+		source_msg = ""
+
+	if len(node.childNodes) != 1:
+		logging.warning("Invalid content for '"+node.localName+"'"+source_msg)
+		return False
+	
+	return node.childNodes[0].nodeValue
+	
 #
 # CLASSES
 #
@@ -328,6 +461,21 @@ class Movie(object):
 		r += "	<genre>"+self.genre+"</genre>\n"
 		
 		return r+"</media>"
+
+class Collection(object):
+	
+	def __init__(self, name, indices):
+		self.name    = name
+		self.indices = indices
+	
+
+class CollectionIndex(object):
+	
+	def __init__(self, name, root, path):
+		self.name = name
+		self.root = root
+		self.path = path
+
 
 #
 # MAIN
