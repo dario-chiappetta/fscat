@@ -48,9 +48,14 @@ LOGGING_LEVEL = logging.DEBUG
 
 def build_indices(root = "./"):
 	"""
-	Crawls the subfolders of the current working directory (not recursively)
-	searching for metafiles. When a metafile is found, the corresponding film
-	is added to the index.
+	Reads the Collection configuration file (.fscat.conf), and crawls the 
+	subfolders of the data directory (whose name, '_data/' is currently fixed),
+	searching for metafiles. When a metafile is found, the corresponding media
+	is added to the indices defined in the Collection.
+	
+		'root'	Is the absolute or relative path to the directory containing 
+				the collection configuration file (.fscat.conf) and the data
+				folder '_data/'
 	"""
 	
 	logging.debug("Indices build started")
@@ -89,6 +94,11 @@ def edit_meta(movieroot = "./"):
 	"""
 	Edit the metadata for the movie in the specified directory. Create metadata
 	file if not already present.
+	
+		'movieroot'	Is the folder, in the data directory, containing the source
+					files of the movie, along with, possibly, the metafile.
+					
+	TODO: THIS FUNCTION IS OUTDATED!
 	"""
 	
 	logging.debug("Editing metadata for movie in the current folder")
@@ -167,6 +177,11 @@ def init_meta(dataroot = DIR_DATA):
 	"""
 	Loops (not recursively) through the subdirectories of 'dataroot', creating
 	metadata for each folder (or editing them, if already present)
+	
+		'dataroot'	Is the data root folder, containing all the media of the 
+					collection.
+					
+	TODO: THIS FUNCTION IS OUTDATED
 	"""
 	
 	#
@@ -207,6 +222,9 @@ def init_meta(dataroot = DIR_DATA):
 def guess_meta(movieroot):
 	"""
 	Guesses the metadata from file and folder names
+	
+		'movieroot'	Is the folder, in the data directory, containing the source
+					files of the movie, along with, possibly, the metafile.
 	"""
 	
 	"""files: all the possible video and subtitle files"""
@@ -240,6 +258,13 @@ def guess_meta(movieroot):
 #
 
 def yn_remove_folder(path):
+	"""
+	Prompts the user with the question wether the given 'path' should be 
+	removed or not. On affirmative answer, removes 'path' and all its content.
+	
+		'path'	Path to the directory to be removed
+	"""
+	
 	ans = input("Remove '"+path+"' and its content? [y/N] ")
 	if (ans.lower() == 'y'):
 		rmtree(path)
@@ -251,6 +276,14 @@ def yn_remove_folder(path):
 		return yn_remove_folder(path)
 
 def add_to_index(src_path, movie, index):
+	"""
+	Adds the given 'movie' to 'index'.
+	
+		'src_path'	Is the folder, in the data directory, where the source 
+					files of the movie are placed.
+		'movie'		Is a Movie object
+		'index'		Is a Index object
+	"""
 	
 	"""Extract features from movie"""
 	feat = {}
