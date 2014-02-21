@@ -32,8 +32,6 @@ __status__  = "development"
 
 DIR_DATA    = "_data/"
 DIR_IDX     = "./"
-DIR_IDX_AZ  = DIR_IDX+"by_title/"
-DIR_IDX_GEN = DIR_IDX+"by_genre/"
 CONFFILE    = ".fscat.conf"
 METAFILE    = ".meta"			# TODO: change in .fscat.meta
 
@@ -41,6 +39,8 @@ KW_STOP = "S"
 KW_SKIP = "K"
 
 UNDEFINED_NAME = "_UNDEFINED_"
+
+LOGGING_LEVEL = logging.DEBUG
 
 #
 # COMMANDS
@@ -55,10 +55,12 @@ def build_indices(root = "./"):
 	
 	logging.debug("Indices build started")
 	
-	root     = os.path.abspath(root)+"/"
-	dataroot = root+DIR_DATA
+	#~ root     = os.path.abspath(root)+"/"
+	#~ dataroot = os.path.join(root, DIR_DATA)
+	root     = abspath(root)
+	dataroot = abspath(DIR_DATA, root)
 	
-	collection = get_collection_from_XML(root+CONFFILE)
+	collection = get_collection_from_XML(root)
 	if not collection:
 		logging.error("Errors occurred reading collection's configuration file. Aborting.")
 		return False
@@ -72,8 +74,8 @@ def build_indices(root = "./"):
 			
 	"""Build the updated indices"""
 	for d in [x[0] for x in os.walk(dataroot)][1:]:
-		d = d+"/"
-		movies = get_movies_from_XML(d+METAFILE)
+		metafile_path = abspath(METAFILE, d)
+		movies = get_movies_from_XML(metafile_path)
 		if movies:
 			for m in movies:
 				#~ add_to_index_az(d+"/",m)
@@ -167,6 +169,11 @@ def init_meta(dataroot = DIR_DATA):
 	metadata for each folder (or editing them, if already present)
 	"""
 	
+	#
+	# TODO: update this function and its calls: should receive only absolute
+	#       paths
+	#
+	
 	"""Check if data directory exists"""
 	if not os.path.exists(dataroot):
 		logging.error("Invalid data directory: "+os.path.abspath(dataroot))
@@ -246,18 +253,18 @@ def yn_remove_folder(path):
 def add_to_index(src_path, movie, index):
 	
 	"""Extract features from movie"""
-	f = {}
-	f["TITLE"]   = movie.title
-	f["YEAR"]    = movie.year
-	f["GENRE"]   = movie.genre
-	f["INITIAL"] = movie.title[0].upper()
+	feat = {}
+	feat["TITLE"]   = movie.title
+	feat["YEAR"]    = movie.year
+	feat["GENRE"]   = movie.genre
+	feat["INITIAL"] = movie.title[0].upper()
 	
 	"""Build path by replacing features in the definition"""
 	idx_path = index.path
-	for k in f.keys():
-		idx_path = idx_path.replace("$"+k,f[k])
+	for k in feat.keys():
+		idx_path = idx_path.replace("$"+k,feat[k])
 	
-	idx_path = index.root+idx_path
+	idx_path = os.path.join(index.root, idx_path)
 	
 	"""Create the index directory, if not already existing"""
 	if not os.path.exists(idx_path):
@@ -265,30 +272,57 @@ def add_to_index(src_path, movie, index):
 		
 	"""Create a hardlink to the movie file(s)"""
 	for f in movie.files:
+		src  = os.path.join(src_path, f)
+		dest = os.path.join(idx_path, f)
 		try:
-			os.link(src_path+f,idx_path+f)
+			os.link( src, dest )
 		except FileNotFoundError:
-			logging.warning("File not found: "+src_path+f+". Skipped. It is recommended to update movie entry.")
+			logging.warning("File not found: "+src+". Skipped. It is "+\
+			                "recommended to update movie entry.")
 
 	logging.debug("Added '"+movie.title+"' to index '"+index.name+"' ("+idx_path+")")
 
+
+#
+# UTIL_MISC
+# Utility methods used in various parts of the code
+#
+
+def abspath(path, root = "./"):
+	"""
+	Like 'os.path.abspath()', returns a normalized absolutized version of the 
+	pathname 'path'. In addition, a different root can be optionally used in 
+	place of the current working directory.
+	
+		'path'	Is an absolute or relative path, will be normalized, absolutized
+				and returned.
+		'root'	Is an absolute or relative path, will be used as root for 'path',
+				if possible.
+	"""
+	
+	root = os.path.abspath(root)
+	
+	return os.path.normpath( os.path.join(root, path) )
+	
 #
 # FACTORY
 #
 
-def get_movies_from_XML(filename):
+def get_movies_from_XML(filepath):
 	"""
 	Returns a list of Movie objects built upon the <movie> entries found in the
 	given .meta description file
+		
+		'filepath'	Is the path to the XML file to be read
 	"""
 	
-	if not os.path.isfile(filename):
+	if not os.path.isfile(filepath):
 		return False
 	
 	try:
-		meta = minidom.parse(filename)
+		meta = minidom.parse(filepath)
 	except:
-		logging.warning("Invalid content for metafile: "+filename)
+		logging.warning("Invalid content for metafile: "+filepath)
 		return False
 	
 	r = []
@@ -315,7 +349,7 @@ def get_movies_from_XML(filename):
 				assert tag.childNodes[0].nodeType == tag.childNodes[0].TEXT_NODE
 				properties[p] = tag.childNodes[0].data
 			except IndexError:
-				logging.warning("Empty value for property '"+p+"' in metafile "+filename)
+				logging.warning("Empty value for property '"+p+"' in metafile "+filepath)
 				properties[p] = ""
 		
 		"""Builds and appends a Movie object representing the <media> entry"""
@@ -323,20 +357,25 @@ def get_movies_from_XML(filename):
 	
 	return r
 
-def get_collection_from_XML(filename):
+def get_collection_from_XML(root):
 	"""
 	Returns a Collection object built from the collection's configuration file,
 	.fscat.conf
+	
+		'root'	Is an absolute path to the directory containing the 
+				configuration file (e.g. '/home/dario/collections')
 	"""
 
-	if not os.path.isfile(filename):
-		logging.warning("Impossible to open '"+filename+"' for reading.")
+	filepath = os.path.join(root, CONFFILE)
+
+	if not os.path.isfile(filepath):
+		logging.warning("Impossible to open '"+filepath+"' for reading.")
 		return False
 	
 	try:
-		conf = minidom.parse(filename)
+		conf = minidom.parse(filepath)
 	except:
-		logging.warning("Invalid content for configuration file: "+filename)
+		logging.warning("Invalid content for configuration file: "+filepath)
 		return False
 	
 	"""Get the main <collection> tag"""
@@ -350,36 +389,37 @@ def get_collection_from_XML(filename):
 	indices = []
 	for node in collection.childNodes:
 		if node.localName == "index":
-			i = _get_index_from_XML_element(node, filename)
+			i = _get_index_from_XML_element(node, root, filepath)
 			if i:
 				indices.append(i)
 			
 		elif node.localName == "name":
 			if name_processed:
-				logging.warning("Duplicate 'name' entry in '"+filename+"'")
+				logging.warning("Duplicate 'name' entry in '"+filepath+"'")
 			name = _get_XML_tag_value(node)
 			name_processed = True
 		
 		elif node.localName is not None:
-			logging.warning("Unknown tag '"+node.localName+"' in '"+filename+"'. Skipping.")
+			logging.warning("Unknown tag '"+node.localName+"' in '"+filepath+"'. Skipping.")
 
 	if not name:
-		logging.warning("Missing 'name' tag for collection in '"+filename+"'")
+		logging.warning("Missing 'name' tag for collection in '"+filepath+"'")
 		name = UNDEFINED_NAME
 	if len(indices) == 0:
-		logging.warning("No index defined in '"+filename+"'")
+		logging.warning("No index defined in '"+filepath+"'")
 		return False
 	
 	return Collection(name,indices)
 	
 
-def _get_index_from_XML_element(element, source = None):
+def _get_index_from_XML_element(element, c_root, source = None):
 	"""
 	Builds and returns a CollectionIndex object from a <index> element (supposed
 	to be found in the collection's .fscat.conf), as it is parsed by minidom.
 	
 		'element'	Is the Dom Element containing the index
-		'source'	Is the path to the XML, used for error messages
+		'c_root'	Is the root directory of the collection
+		'source'	Is the path to the source XML file, used for error messages
 	"""
 	
 	name = None
@@ -401,12 +441,17 @@ def _get_index_from_XML_element(element, source = None):
 			if root_processed:
 				logging.warning("Duplicate entry 'root' in '"+source+"'")
 			root = _get_XML_tag_value(node)
+			root = abspath(root, c_root)
 			root_processed = True
 			
 		elif node.localName == "path":
 			if path_processed:
 				logging.warning("Duplicate entry 'path' in '"+source+"'")
 			path = _get_XML_tag_value(node)
+			if os.path.isabs(path):
+				logging.warning("Absolute path given as 'path' in index in '"+\
+				                source+"'. This is not supposed to happen and "+\
+				                "will produce unexpected results.")
 			path_processed = True
 			
 		elif node.localName is not None:
@@ -501,11 +546,17 @@ class CollectionIndex(object):
 #
 
 if __name__ == '__main__':
-	logging.basicConfig(level=logging.WARNING)
+	logging.basicConfig(level=LOGGING_LEVEL)
 	
 	try:
 		if (sys.argv[1] == "build"):
-			if build_indices():
+			
+			try:
+				root = sys.argv[2]
+			except IndexError:
+				root = None
+			
+			if build_indices(root):
 				print("Indices successfully built")
 			else:
 				print("Errors occurred. No index was built.")
