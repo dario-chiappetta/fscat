@@ -53,9 +53,9 @@ def build_indices(root = "./"):
 	searching for metafiles. When a metafile is found, the corresponding media
 	is added to the indices defined in the Collection.
 	
-		'root'	Is the absolute or relative path to the directory containing 
-				the collection configuration file (.fscat.conf) and the data
-				folder '_data/'
+		'root'   Is the absolute or relative path to the directory containing 
+		         the collection configuration file (.fscat.conf) and the data
+		         folder '_data/'
 	"""
 	
 	logging.debug("Indices build started")
@@ -95,8 +95,8 @@ def edit_meta(movieroot = "./"):
 	Edit the metadata for the movie in the specified directory. Create metadata
 	file if not already present.
 	
-		'movieroot'	Is the folder, in the data directory, containing the source
-					files of the movie, along with, possibly, the metafile.
+		'movieroot'   Is the folder, in the data directory, containing the source
+		              files of the movie, along with, possibly, the metafile.
 					
 	TODO: THIS FUNCTION IS OUTDATED!
 	"""
@@ -178,8 +178,8 @@ def init_meta(dataroot = DIR_DATA):
 	Loops (not recursively) through the subdirectories of 'dataroot', creating
 	metadata for each folder (or editing them, if already present)
 	
-		'dataroot'	Is the data root folder, containing all the media of the 
-					collection.
+		'dataroot'   Is the data root folder, containing all the media of the 
+		             collection.
 					
 	TODO: THIS FUNCTION IS OUTDATED
 	"""
@@ -223,8 +223,8 @@ def guess_meta(movieroot):
 	"""
 	Guesses the metadata from file and folder names
 	
-		'movieroot'	Is the folder, in the data directory, containing the source
-					files of the movie, along with, possibly, the metafile.
+		'movieroot'   Is the folder, in the data directory, containing the source
+		              files of the movie, along with, possibly, the metafile.
 	"""
 	
 	"""files: all the possible video and subtitle files"""
@@ -262,7 +262,7 @@ def yn_remove_folder(path):
 	Prompts the user with the question wether the given 'path' should be 
 	removed or not. On affirmative answer, removes 'path' and all its content.
 	
-		'path'	Path to the directory to be removed
+		'path'   Path to the directory to be removed
 	"""
 	
 	ans = input("Remove '"+path+"' and its content? [y/N] ")
@@ -327,10 +327,10 @@ def abspath(path, root = "./"):
 	pathname 'path'. In addition, a different root can be optionally used in 
 	place of the current working directory.
 	
-		'path'	Is an absolute or relative path, will be normalized, absolutized
-				and returned.
-		'root'	Is an absolute or relative path, will be used as root for 'path',
-				if possible.
+		'path'   Is an absolute or relative path, will be normalized, absolutized
+                 and returned.
+		'root'   Is an absolute or relative path, will be used as root for 'path',
+                 if possible.
 	"""
 	
 	root = os.path.abspath(root)
@@ -346,7 +346,7 @@ def get_movies_from_XML(filepath):
 	Returns a list of Movie objects built upon the <movie> entries found in the
 	given .meta description file
 		
-		'filepath'	Is the path to the XML file to be read
+		'filepath'   Is the path to the XML file to be read
 	"""
 	
 	if not os.path.isfile(filepath):
@@ -395,8 +395,8 @@ def get_collection_from_XML(root):
 	Returns a Collection object built from the collection's configuration file,
 	.fscat.conf
 	
-		'root'	Is an absolute path to the directory containing the 
-				configuration file (e.g. '/home/dario/collections')
+		'root'   Is an absolute path to the directory containing the 
+                 configuration file (e.g. '/home/dario/collections')
 	"""
 
 	filepath = os.path.join(root, CONFFILE)
@@ -450,9 +450,9 @@ def _get_index_from_XML_element(element, c_root, source = None):
 	Builds and returns a CollectionIndex object from a <index> element (supposed
 	to be found in the collection's .fscat.conf), as it is parsed by minidom.
 	
-		'element'	Is the Dom Element containing the index
-		'c_root'	Is the root directory of the collection
-		'source'	Is the path to the source XML file, used for error messages
+		'element'   Is the Dom Element containing the index
+		'c_root'    Is the root directory of the collection
+		'source'    Is the path to the source XML file, used for error messages
 	"""
 	
 	name = None
@@ -511,9 +511,9 @@ def _get_XML_tag_value(node, source = None):
 	Returns the string contained in the given DOM Node, or an error if the node
 	does not contain a string (e.g. other nodes).
 	
-		'node'		is the DOM Node
-		'source'	Is an identifier of the source (e.g. the XML file), will be
-					displayed in case of error
+		'node'      is the DOM Node
+		'source'    Is an identifier of the source (e.g. the XML file), will be
+                    displayed in case of error
 	"""
 
 	if source is not None:
