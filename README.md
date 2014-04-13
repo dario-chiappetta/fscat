@@ -27,30 +27,30 @@ For example...
 --------------
 ...if you have a movie file
 
-'''
+```
 title: The Matrix
 year: 1999
 genre: sci-fi
 language: EN
 files: ["_data/matrix.avi", "_data/covers/thematrix.png"]
-'''
+```
 
 And the two indices
 
-'''
+```
 by_genre: $GENRE/$YEAR - $TITLE/
 by_language: $LANG/$GENRE/$YEAR - $TITLE/
-'''
+```
 
 fscat will replicate the files as:
 
-'''
+```
 by_genre/sci-fi/1999 - The Matrix/matrix.avi
 by_genre/sci-fi/1999 - The Matrix/thematrix.png
 
 by_language/EN/sci-fi/1999 - The Matrix/matrix.avi
 by_language/EN/sci-fi/1999 - The Matrix/thematrix.png
-'''
+```
 
 Of course, since it's using hardlinks no extra disk space will be 
 occupied.
@@ -59,19 +59,19 @@ Installation
 ------------
 Just copy the script into one of your PATH's directories, e.g.
 
-'''bash
+```bash
 sudo cp fscat /usr/bin/fscat
-'''
+```
 
 Initialise the collection
 -------------------------
 Move in the directory that contains your "_data/" folder and run the 
 init command:
 
-'''bash
+```bash
 cd /home/dario/film
 fscat init
-'''
+```
 
 A procedure will guide you through the creation of the metafiles, trying 
 to guess as much as possible from the filenames. Note that the procedure 
@@ -84,7 +84,8 @@ In the same directory that contains the "_data/" folder, create a ".fscat"
 file. This is an XML file that contains the collection's configuration.
 
 You can use the following as an example:
-'''
+
+```
 <collection>
 	<name>Film</name>
 
@@ -107,7 +108,7 @@ You can use the following as an example:
 	</index>
 	
 </collection>
-'''
+```
 
 Build the collection
 --------------------
@@ -115,8 +116,8 @@ Once you have the metafiles and the collection's configuration, you can
 build your indices launching the "build" command in the same directory 
 that contains the "_data/" folder:
 
-'''bash
+```bash
 fscat build
-'''
+```
 
 Enjoy your movies :)
