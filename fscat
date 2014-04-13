@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 """
 FSCAT - Organize media collections in multiple taxonomies using Unix hard links
@@ -38,7 +38,8 @@ METAFILE    = ".meta"			# TODO: change in .fscat.meta
 KW_STOP = "S"
 KW_SKIP = "K"
 
-UNDEFINED_NAME = "_UNDEFINED_"
+UNDEFINED_VALUE = ""
+UNDEFINED_NAME  = "_UNDEFINED_"
 
 LOGGING_LEVEL = logging.DEBUG
 
@@ -97,26 +98,32 @@ def edit_meta(movieroot = "./"):
 	
 	   'movieroot'   Is the folder, in the data directory, containing the source
 	                 files of the movie, along with, possibly, the metafile.
-					
-	TODO: THIS FUNCTION IS OUTDATED!
 	"""
 	
 	logging.debug("Editing metadata for movie in the current folder")
 
 	"""Enforce trailing slash in path"""
-	movieroot = os.path.abspath(movieroot)+"/"
+	movieroot = abspath(movieroot)
 
 	"""If metadata already present, resue information"""
-	# TODO: now get_movies_from_XML() returns a list, following code must be 
-	#       updated
-	m = get_movies_from_XML(movieroot+METAFILE)
-	if m:
+	
+	metafile_path = abspath(METAFILE,movieroot)
+	
+	# TODO: add edit support for multiple files...
+	m_list = get_movies_from_XML(metafile_path)
+	if len(m_list) > 1:
+		print("Editing of metafile with multiple movies is not supported yet: edit XML manually")
+		return False
+
+	if len(m_list) == 1:
+		m = m_list[0]
 		p_title = m.title
 		p_year  = m.year
 		p_genre = m.genre
+		p_lang  = m.lang
 		p_files = m.files
 	else:
-		p_title, p_year, p_genre, p_files = guess_meta(movieroot)
+		p_title, p_year, p_genre, p_language, p_files = guess_meta(movieroot)
 
 	n_title = input("title: ["+p_title+"] ")
 	if n_title == "":
@@ -129,6 +136,10 @@ def edit_meta(movieroot = "./"):
 	n_genre = input("genre: ["+p_genre+"] ")
 	if n_genre == "":
 		n_genre = p_genre
+		
+	n_lang = input("language: ["+p_lang+"] ")
+	if n_lang == "":
+		n_lang = p_lang
 	
 	filelist = []
 	stop = False
@@ -152,7 +163,7 @@ def edit_meta(movieroot = "./"):
 		
 		filename_in = input("file ("+KW_STOP+" to terminate): ")
 	
-	n_movie = Movie(n_title, n_year, n_genre, filelist)
+	n_movie = Movie(n_title, n_year, n_genre, n_lang, filelist)
 		
 	print(n_movie.get_xml())
 	
@@ -162,10 +173,10 @@ def edit_meta(movieroot = "./"):
 		
 		if (write_yn == "") or (write_yn.lower() == "y"):
 			stop = True
-			metafile = open(movieroot+METAFILE,"w")
+			metafile = open(metafile_path,"w")
 			metafile.write(n_movie.get_xml())
 			metafile.close()
-			print("Metadata written to "+movieroot+METAFILE)
+			print("Metadata written to "+metafile_path)
 		elif write_yn.lower() == "n":
 			stop = True
 			print("Metadata were not updated")
@@ -180,18 +191,13 @@ def init_meta(dataroot = DIR_DATA):
 	
 	   'dataroot'   Is the data root folder, containing all the media of the 
 	                collection.
-					
-	TODO: THIS FUNCTION IS OUTDATED
 	"""
 	
-	#
-	# TODO: update this function and its calls: should receive only absolute
-	#       paths
-	#
+	dataroot = abspath(dataroot)
 	
 	"""Check if data directory exists"""
 	if not os.path.exists(dataroot):
-		logging.error("Invalid data directory: "+os.path.abspath(dataroot))
+		logging.error("Invalid data directory: "+dataroot)
 		return False
 	
 	"""Build the updated index"""
@@ -199,7 +205,7 @@ def init_meta(dataroot = DIR_DATA):
 		
 		stop = False
 		while not stop:
-			edit_yn = input("Edit metadata for "+os.path.abspath(d)+"? [y/N] ")
+			edit_yn = input("Edit metadata for "+d+"? [y/N] ")
 			
 			if (edit_yn.lower() == "y"):
 				stop = True
@@ -250,7 +256,10 @@ def guess_meta(movieroot):
 	"""genre: not guessed at the moment..."""
 	genre = ""
 	
-	return title, year, genre, files
+	"""lang: not guessed at the moment..."""
+	lang = ""
+	
+	return title, year, genre, lang, files
 
 #
 # UTIL_BUILD
@@ -283,6 +292,15 @@ def add_to_index(src_path, movie, index):
 	                files of the movie are placed.
 	   'movie'      Is a Movie object
 	   'index'      Is a Index object
+	   
+	Returns the top-most directories (relatively to the index root) containing
+	links to the file.
+	E.g. if 'matrix.avi' is put in '$ROOT/genre/scifi/1999-Matrix/matrix.avi'
+	and in '$ROOT/title/M/Matrix/matrix.avi', the software will return the set
+	['genre', 'title'].
+	This information will be used to track the directories created by fscat
+	
+	TODO: Implement the return value
 	"""
 	
 	"""Extract features from movie"""
@@ -290,12 +308,16 @@ def add_to_index(src_path, movie, index):
 	feat["TITLE"]   = movie.title
 	feat["YEAR"]    = movie.year
 	feat["GENRE"]   = movie.genre
+	feat["LANG"]    = movie.lang
 	feat["INITIAL"] = movie.title[0].upper()
 	
 	"""Build path by replacing features in the definition"""
 	idx_path = index.path
 	for k in feat.keys():
-		idx_path = idx_path.replace("$"+k,feat[k])
+		feat_content = feat[k]
+		if feat[k] == UNDEFINED_VALUE:
+			feat_content = UNDEFINED_NAME
+		idx_path = idx_path.replace("$"+k,feat_content)
 	
 	idx_path = os.path.join(index.root, idx_path)
 	
@@ -372,8 +394,16 @@ def get_movies_from_XML(filepath):
 		
 		"""Get the other properties"""
 		properties = {}
+		properties["title"] = UNDEFINED_VALUE
+		properties["year"]  = UNDEFINED_VALUE
+		properties["genre"] = UNDEFINED_VALUE
+		properties["lang"]  = UNDEFINED_VALUE
 		for p in Movie.PROPERTIES:
 			elements = media.getElementsByTagName(p)
+			
+			if len(elements) == 0:
+				logging.warning("Missing property '"+p+"' in metafile "+filepath+": will be set to undefined.")
+				continue
 			
 			assert len(elements) == 1
 			tag = elements[0]
@@ -386,7 +416,7 @@ def get_movies_from_XML(filepath):
 				properties[p] = ""
 		
 		"""Builds and appends a Movie object representing the <media> entry"""
-		r.append(Movie(properties["title"],properties["year"],properties["genre"], files))
+		r.append(Movie(properties["title"],properties["year"],properties["genre"], properties["lang"], files))
 	
 	return r
 
@@ -439,7 +469,7 @@ def get_collection_from_XML(root):
 		logging.warning("Missing 'name' tag for collection in '"+filepath+"'")
 		name = UNDEFINED_NAME
 	if len(indices) == 0:
-		logging.warning("No index defined in '"+filepath+"'")
+		logging.warning("No valid index found in '"+filepath+"'")
 		return False
 	
 	return Collection(name,indices)
@@ -483,8 +513,10 @@ def _get_index_from_XML_element(element, c_root, source = None):
 			path = _get_XML_tag_value(node)
 			if os.path.isabs(path):
 				logging.warning("Absolute path given as 'path' in index in '"+\
-				                source+"'. This is not supposed to happen and "+\
-				                "will produce unexpected results.")
+				                source+"'. Index paths must be relative to their "+\
+				                "root, as absolute paths would probably cause "+\
+				                "DATA LOSS during index update operations.")
+				return False
 			path_processed = True
 			
 		elif node.localName is not None:
@@ -533,12 +565,13 @@ def _get_XML_tag_value(node, source = None):
 
 class Movie(object):
 	
-	PROPERTIES = ["title", "year", "genre"]
+	PROPERTIES = ["title", "year", "genre", "lang"]
 	
-	def __init__(self, title, year, genre, files):
+	def __init__(self, title, year, genre, lang, files):
 		self.title = title
 		self.year  = year
 		self.genre = genre
+		self.lang  = lang
 		self.files = files
 		
 	def get_xml(self):
@@ -556,6 +589,7 @@ class Movie(object):
 		r += "	<title>"+self.title+"</title>\n"
 		r += "	<year>"+self.year+"</year>\n"
 		r += "	<genre>"+self.genre+"</genre>\n"
+		r += "	<lang>"+self.lang+"</lang>\n"
 		
 		return r+"</media>"
 
